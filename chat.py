@@ -2,13 +2,18 @@ import random
 import pandas as pd
 import streamlit as st
 from sentence_transformers import SentenceTransformer, util
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 
-# Load your data
-df = pd.read_csv(r'C:\Users\laiul\OneDrive\Desktop\AI-chatbot\dataset - Sheet1.csv')  # Replace with your dataset path
+# Load data
+# Menggunakan raw string (r'...') atau path relatif agar aman dari SyntaxError
+df = pd.read_csv('dataset - Sheet1.csv')
 
-# Initialize the SentenceTransformer model
-model = SentenceTransformer('all-MiniLM-L6-v2')
+# Initialize SentenceTransformer model (menggunakan decorator cache agar tidak direload terus-menerus)
+@st.cache_resource
+def load_model():
+    return SentenceTransformer('all-MiniLM-L6-v2')
+
+model = load_model()
 
 # Define medical keywords for fallback
 medical_keywords = {
@@ -44,10 +49,8 @@ health_tips = {
 
 # Function to get personalized health tip
 def get_personalized_health_tip(user_input):
-    # Convert input to lowercase for easier matching
     user_input_lower = user_input.lower()
 
-    # Check for specific keywords in the user input
     if "tired" in user_input_lower or "fatigue" in user_input_lower:
         return random.choice(health_tips["energy"])
     elif "sleep" in user_input_lower or "rest" in user_input_lower:
@@ -55,7 +58,6 @@ def get_personalized_health_tip(user_input):
     elif "stress" in user_input_lower or "anxious" in user_input_lower:
         return random.choice(health_tips["stress"])
     else:
-        # Default to a general health tip if no specific keywords match
         return random.choice(health_tips["general"])
 
 # Function to find the best cure based on similarity
@@ -67,40 +69,41 @@ def find_best_cure(user_input):
     best_match_idx = similarities.argmax().item()
     best_match_score = similarities[best_match_idx].item()
     
-    # Define a similarity threshold for valid matches
-    SIMILARITY_THRESHOLD = 0.5  # Adjust as needed
+    SIMILARITY_THRESHOLD = 0.5
     
     if best_match_score < SIMILARITY_THRESHOLD:
-        # Check for keywords in user input
         for keyword, response in medical_keywords.items():
             if keyword in user_input.lower():
                 return response
         
-        # Default fallback response if no keywords match
         return "I'm sorry, I don't have enough information on this. Please consult a healthcare professional."
     
     return df.iloc[best_match_idx]['cure']
 
-# Function to translate text
+# Function to translate text using deep-translator
 def translate_text(text, dest_language='en'):
-    return translator.translate(text, dest=dest_language).text
-
-# Initialize translator
-translator = Translator()
+    if dest_language == 'en':
+        return text
+    try:
+        translated = GoogleTranslator(source='auto', target=dest_language).translate(text)
+        return translated
+    except Exception as e:
+        return f"{text} (Translation failed: {str(e)})"
 
 # Streamlit UI
 st.title("Medical Chatbot 🤖")
 user_input = st.text_input("Ask a question:")
 
-# Language selection (user chooses from the updated list of languages)
+# Language selection
 language_choice = st.selectbox("Select Language", [
-    "English", "Hindi", "Gujarati", "Korean", "Turkish",
+    "English", "Indonesian", "Hindi", "Gujarati", "Korean", "Turkish",
     "German", "French", "Arabic", "Urdu", "Tamil", "Telugu", "Chinese", "Japanese"
 ])
 
-# Language codes based on the user selection
+# Language codes based on Google Translator standards
 language_codes = {
     "English": "en",
+    "Indonesian": "id",
     "Hindi": "hi",
     "Gujarati": "gu",
     "Korean": "ko",
@@ -111,7 +114,7 @@ language_codes = {
     "Urdu": "ur",
     "Tamil": "ta",
     "Telugu": "te",
-    "Chinese": "zh-CN",  # Simplified Chinese
+    "Chinese": "zh-CN",
     "Japanese": "ja",
 }
 
@@ -119,7 +122,6 @@ language_codes = {
 if st.button("Get Response"):
     if user_input:
         response = find_best_cure(user_input)
-        # Translate the response based on the selected language
         translated_response = translate_text(response, dest_language=language_codes[language_choice])
         st.write(f"**My Suggestion is:** {translated_response}")
         st.write("*Please note, the translation is provided by AI and might not be perfect.*")
